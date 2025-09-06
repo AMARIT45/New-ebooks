@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tally Lite — Sales & Purchase Accounting (Demo)</title>
+  <style>
+    /* Minimal modern UI for Tally-like app */
+    :root{--bg:#0b1220;--card:#071126;--muted:#94a3b8;--accent:#06b6d4;--success:#34d399;--glass:rgba(255,255,255,0.03);--radius:10px}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;color:#e6eef8;background:linear-gradient(180deg,var(--bg),#031027);min-height:100vh}
+    header{display:flex;align-items:center;gap:12px;padding:14px 20px;background:linear-gradient(90deg,rgba(255,255,255,0.02),transparent);backdrop-filter:blur(6px)}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:44px;height:44px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:800}
+    .app-title{font-weight:700}
+    .layout{display:grid;grid-template-columns:260px 1fr;gap:18px;padding:18px}
+    .sidebar{background:var(--card);padding:14px;border-radius:var(--radius);min-height:76vh}
+    .nav{display:flex;flex-direction:column;gap:8px}
+    .nav button{background:transparent;border:0;padding:10px;border-radius:8px;color:var(--muted);text-align:left;cursor:pointer}
+    .nav button.active{background:linear-gradient(90deg,var(--accent),#7c3aed);color:#021127}
+    .content{padding:12px}
+    .top-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:12px;border-radius:12px}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .small{font-size:13px;color:var(--muted)}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{padding:8px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:left}
+    .controls{display:flex;gap:8px}
+    .btn{padding:8px 10px;border-radius:8px;border:0;background:var(--accent);color:#021127;cursor:pointer}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+    /* forms */
+    .form-row{display:flex;gap:8px;margin-bottom:8px}
+    input,select,textarea{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+    label{font-size:13px;color:var(--muted)}
+    /* voucher modal */
+    .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:20px}
+    .modal.open{display:flex}
+    .panel{width:100%;max-width:980px;background:#061427;padding:16px;border-radius:12px}
+    .items{max-height:360px;overflow:auto;margin-top:8px;border-radius:8px}
+    .flex{display:flex;gap:8px;align-items:center}
+    .right{margin-left:auto}
+    .muted{color:var(--muted)}
+    .footer{padding:12px;text-align:center;color:var(--muted)}
+    @media (max-width:900px){.layout{grid-template-columns:1fr}.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">TL</div>
+      <div>
+        <div class="app-title">Tally Lite</div>
+        <div class="small">Sales · Purchase · Ledgers · GST · Invoices</div>
+      </div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <div class="small">Demo • Local (no server)</div>
+      <button id="exportBtn" class="btn ghost">Export Data</button>
+      <button id="importBtn" class="btn">Import</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar card">
+      <div style="font-weight:700;margin-bottom:8px">Main Menu</div>
+      <div class="nav">
+        <button data-view="dashboard" class="active">Dashboard</button>
+        <button data-view="masters">Masters (Ledgers, Items)</button>
+        <button data-view="vouchers">Vouchers (Sales/Purchase)</button>
+        <button data-view="reports">Reports</button>
+        <button data-view="settings">Settings</button>
+      </div>
+      <hr style="border:none;border-top:1px solid rgba(255,255,255,0.03);margin:12px 0">
+      <div>
+        <div style="font-weight:700">Quick Actions</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          <button id="newSale" class="btn">New Sales Invoice</button>
+          <button id="newPurchase" class="btn ghost">New Purchase Invoice</button>
+          <button id="openDaybook" class="btn ghost">Open Day Book</button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div id="viewContainer"></div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal" aria-hidden="true">
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <div style="font-weight:700" id="modalTitle">Voucher</div>
+        <div class="muted" id="modalSubtitle"></div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button id="saveVoucher" class="btn">Save</button>
+          <button id="closeModal" class="btn ghost">Close</button>
+        </div>
+      </div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="footer">Tally Lite — Client-side demo. Use for prototyping and learning.</div>
+
+  <script>
+    /*
+      Tally Lite — Single-file demo
+      Features:
+      - Masters: Ledgers & Items
+      - Vouchers: Sales, Purchase (line items), basic GST fields
+      - Daybook, Ledger view, Trial balance (simple)
+      - LocalStorage persistence and export/import
+      - Invoice print preview (basic)
+    */
+
+    // --- Sample data ---
+    const sample = {
+      settings: {company:'Demo Co', currency:'INR', gst:true},
+      ledgers: [
+        {id:'L-CASH',name:'Cash',group:'Cash-in-Hand',opening:10000},
+        {id:'L-BANK',name:'Bank',group:'Bank Accounts',opening:50000},
+        {id:'L-SALES',name:'Sales Account',group:'Indirect Income',opening:0},
+        {id:'L-PUR',name:'Purchase Account',group:'Direct Expenses',opening:0},
+        {id:'L-SUP1',name:'Supplier A',group:'Sundry Creditors',opening:0},
+        {id:'L-CUST1',name:'Customer A',group:'Sundry Debtors',opening:0}
+      ],
+      items: [
+        {id:'I-01',name:'Product A',hsn:'1001',rate:250,unit:'pcs'},
+        {id:'I-02',name:'Product B',hsn:'1002',rate:450,unit:'pcs'}
+      ],
+      vouchers: [
+        {id:'V-1',type:'Sales',date:'2025-09-01',party:'Customer A',lines:[{itemId:'I-01',desc:'Product A',qty:2,rate:250,amount:500}],tax:18,total:590,paymentLedgers:['L-CUST1']},
+        {id:'V-2',type:'Purchase',date:'2025-09-03',party:'Supplier A',lines:[{itemId:'I-02',desc:'Product B',qty:1,rate:450,amount:450}],tax:0,total:450,paymentLedgers:['L-SUP1']}
+      ]
+    };
+
+    // --- Storage ---
+    const STORAGE_KEY = 'tally_lite_v1';
+    let db = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if(!db){ db = sample; localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+
+    // --- Helpers ---
+    const uid = (prefix='ID')=> prefix + '-' + Math.random().toString(36).slice(2,9).toUpperCase();
+    function saveDB(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }
+    function formatMoney(n){ return (db.settings.currency || 'INR') + ' ' + Number(n).toLocaleString('en-IN',{maximumFractionDigits:2}); }
+
+    // --- View handling ---
+    const navButtons = document.querySelectorAll('.nav button');
+    const viewContainer = document.getElementById('viewContainer');
+    navButtons.forEach(b=>b.addEventListener('click', ()=>{ navButtons.forEach(x=>x.classList.remove('active')); b.classList.add('active'); showView(b.dataset.view); }));
+
+    function showView(view){ if(view==='dashboard') renderDashboard(); if(view==='masters') renderMasters(); if(view==='vouchers') renderVouchers(); if(view==='reports') renderReports(); if(view==='settings') renderSettings(); }
+
+    // --- Dashboard ---
+    function renderDashboard(){ viewContainer.innerHTML = `
+      <div class="top-row">
+        <div style="font-size:18px;font-weight:700">Dashboard — ${db.settings.company}</div>
+        <div class="controls">
+          <input id="dashSearch" placeholder="Search ledgers, items, vouchers" style="padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03)" />
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div style="font-weight:700">Cash & Bank</div>
+          <div class="small">Combined cash & bank balance</div>
+          <div style="font-size:20px;margin-top:8px">${formatMoney(totalCashBank())}</div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700">Receivables</div>
+          <div class="small">Sundry Debtors</div>
+          <div style="font-size:20px;margin-top:8px">${formatMoney(totalReceivables())}</div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700">Payables</div>
+          <div class="small">Sundry Creditors</div>
+          <div style="font-size:20px;margin-top:8px">${formatMoney(totalPayables())}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px" class="card">
+        <div style="font-weight:700;margin-bottom:8px">Latest Vouchers</div>
+        <table class="table"><thead><tr><th>Voucher</th><th>Type</th><th>Party</th><th>Date</th><th>Amount</th></tr></thead><tbody>${db.vouchers.slice().reverse().slice(0,6).map(v=>`<tr><td>${v.id}</td><td>${v.type}</td><td>${v.party||''}</td><td>${v.date}</td><td>${formatMoney(v.total)}</td></tr>`).join('')}</tbody></table>
+      </div>
+    `;
+
+      document.getElementById('dashSearch').addEventListener('input', (e)=>{ const q=e.target.value.toLowerCase(); if(!q) return; const found = db.ledgers.filter(l=>l.name.toLowerCase().includes(q)).concat(db.items.filter(i=>i.name.toLowerCase().includes(q))).slice(0,8); alert('Quick search results:\n' + found.map(f=>f.name).join('\n')) });
+    }
+
+    function totalCashBank(){ const ids = db.ledgers.filter(l=>l.group.toLowerCase().includes('cash')||l.group.toLowerCase().includes('bank')).map(l=>l.id); // opening + voucher effects (simple)
+      let total = 0; ids.forEach(id=>{ const l = db.ledgers.find(x=>x.id===id); total += (l.opening||0); }); return total; }
+    function totalReceivables(){ return db.ledgers.filter(l=>l.group.toLowerCase().includes('debtors')).reduce((s,l)=>s+(l.opening||0),0) }
+    function totalPayables(){ return db.ledgers.filter(l=>l.group.toLowerCase().includes('creditors')).reduce((s,l)=>s+(l.opening||0),0) }
+
+    // --- Masters (Ledgers & Items) ---
+    function renderMasters(){ viewContainer.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-weight:700">Masters — Ledgers & Items</div><div class="controls"><button id="addLedger" class="btn">Add Ledger</button><button id="addItem" class="btn ghost">Add Item</button></div></div>
+      <div class="grid">
+        <div class="card" style="grid-column:span 1">
+          <div style="font-weight:700">Ledgers</div>
+          <table class="table"><thead><tr><th>Name</th><th>Group</th><th>Opening</th><th></th></tr></thead><tbody id="ledgerList">${db.ledgers.map(l=>`<tr><td>${l.name}</td><td>${l.group}</td><td>${formatMoney(l.opening||0)}</td><td><button class='btn ghost' data-id='${l.id}' onclick='editLedger("${l.id}")'>Edit</button></td></tr>`).join('')}</tbody></table>
+        </div>
+        <div class="card" style="grid-column:span 2">
+          <div style="font-weight:700">Items</div>
+          <table class="table"><thead><tr><th>Name</th><th>HSN</th><th>Rate</th><th>Unit</th><th></th></tr></thead><tbody id="itemList">${db.items.map(it=>`<tr><td>${it.name}</td><td>${it.hsn||''}</td><td>${formatMoney(it.rate)}</td><td>${it.unit||''}</td><td><button class='btn ghost' onclick='editItem("${it.id}")'>Edit</button></td></tr>`).join('')}</tbody></table>
+        </div>
+      </div>
+    `;
+
+      document.getElementById('addLedger').addEventListener('click', ()=>openLedgerModal());
+      document.getElementById('addItem').addEventListener('click', ()=>openItemModal());
+    }
+
+    window.editLedger = function(id){ const led = db.ledgers.find(l=>l.id===id); openLedgerModal(led); }
+    window.editItem = function(id){ const it = db.items.find(i=>i.id===id); openItemModal(it); }
+
+    function openLedgerModal(ledger){ const title = ledger ? 'Edit Ledger' : 'New Ledger'; openModal(title, `
+      <div class='form-row'><div style='flex:1'><label>Name</label><input id='ledName' value='${ledger?ledger.name:''}' /></div><div style='width:170px'><label>Group</label><input id='ledGroup' value='${ledger?ledger.group:''}' /></div></div>
+      <div class='form-row'><div style='width:220px'><label>Opening Balance</label><input id='ledOpen' value='${ledger?ledger.opening||0:0}' type='number' /></div><div style='flex:1'></div></div>
+    `, ()=>{
+      const name = document.getElementById('ledName').value.trim(); const group = document.getElementById('ledGroup').value.trim(); const opening = Number(document.getElementById('ledOpen').value) || 0;
+      if(!name) return alert('Name required'); if(ledger){ ledger.name=name; ledger.group=group; ledger.opening=opening; } else { db.ledgers.push({id:uid('L'),name,group,opening}); }
+      saveDB(); closeModal(); renderMasters(); }); }
+
+    function openItemModal(item){ openModal(item?('Edit Item'):'New Item', `
+      <div class='form-row'><div style='flex:1'><label>Name</label><input id='itName' value='${item?item.name:''}' /></div><div style='width:160px'><label>HSN</label><input id='itHSN' value='${item?item.hsn:''}' /></div></div>
+      <div class='form-row'><div style='width:160px'><label>Rate</label><input id='itRate' type='number' value='${item?item.rate:0}' /></div><div style='width:120px'><label>Unit</label><input id='itUnit' value='${item?item.unit:''}' /></div></div>
+    `, ()=>{ const name=document.getElementById('itName').value.trim(); const hsn=document.getElementById('itHSN').value.trim(); const rate=Number(document.getElementById('itRate').value)||0; const unit=document.getElementById('itUnit').value.trim(); if(!name) return alert('Name required'); if(item){ item.name=name; item.hsn=hsn; item.rate=rate; item.unit=unit; } else { db.items.push({id:uid('I'),name,hsn,rate,unit}); } saveDB(); closeModal(); renderMasters(); }); }
+
+    // --- Vouchers ---
+    function renderVouchers(){ viewContainer.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font-weight:700">Vouchers</div><div class="controls"><select id='voucherType'><option>Sales</option><option>Purchase</option></select><button id='createVoucher' class='btn'>Create</button></div></div>
+      <div class='card'><table class='table'><thead><tr><th>ID</th><th>Type</th><th>Date</th><th>Party</th><th>Total</th><th></th></tr></thead><tbody id='voucherList'>${db.vouchers.map(v=>`<tr><td>${v.id}</td><td>${v.type}</td><td>${v.date}</td><td>${v.party||''}</td><td>${formatMoney(v.total)}</td><td><button class='btn ghost' onclick='viewVoucher("${v.id}")'>View</button></td></tr>`).join('')}</tbody></table></div>
+    `;
+
+      document.getElementById('createVoucher').addEventListener('click', ()=>{
+        const t = document.getElementById('voucherType').value; openVoucherEditor({type:t});
+      });
+    }
+
+    window.viewVoucher = function(id){ const v = db.vouchers.find(x=>x.id===id); openModal('Voucher ' + id, `<div style='font-weight:700'>${v.type} — ${v.party||''}</div><div class='muted'>Date: ${v.date}</div><table class='table'><thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${v.lines.map(l=>`<tr><td>${l.desc}</td><td>${l.qty}</td><td>${formatMoney(l.rate)}</td><td>${formatMoney(l.amount)}</td></tr>`).join('')}</tbody></table><div style='margin-top:10px;font-weight:700'>Total: ${formatMoney(v.total)}</div>`, ()=>closeModal()); }
+
+    function openVoucherEditor(initial){ const v = initial || {}; const today = new Date().toISOString().slice(0,10);
+      openModal((v.type||'Sales') + ' — New', `
+        <div class='form-row'><div style='width:200px'><label>Type</label><select id='vType'><option ${v.type==='Sales'?'selected':''}>Sales</option><option ${v.type==='Purchase'?'selected':''}>Purchase</option></select></div><div style='flex:1'><label>Party</label><input id='vParty' value='${v.party||''}' /></div><div style='width:140px'><label>Date</label><input id='vDate' type='date' value='${v.date||today}' /></div></div>
+        <div style='margin-top:8px;display:flex;gap:8px;align-items:center'><div style='flex:1'><label>Add Item</label><select id='vItem'>${db.items.map(it=>`<option value='${it.id}'>${it.name} — ${formatMoney(it.rate)}</option>`).join('')}</select></div><div style='width:110px'><label>Qty</label><input id='vQty' type='number' value='1' /></div><div style='width:120px'><label>Rate</label><input id='vRate' type='number' value='${db.items[0]?.rate||0}' /></div><div><button id='addLine' class='btn'>Add</button></div></div>
+        <div class='items card' id='linesArea'><table class='table'><thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody id='linesTbody'></tbody></table></div>
+        <div style='display:flex;justify-content:flex-end;align-items:center;margin-top:8px'><div class='muted' style='margin-right:12px'>Tax %</div><input id='vTax' type='number' value='${v.tax||0}' style='width:80px' /><div class='right' style='margin-left:20px;font-weight:700'>Net: <span id='vNet'>0</span></div></div>
+      `, ()=>{
+        // collect and save
+        const type = document.getElementById('vType').value; const party = document.getElementById('vParty').value; const date = document.getElementById('vDate').value; const tax = Number(document.getElementById('vTax').value)||0;
+        const lines = Array.from(document.querySelectorAll('#linesTbody tr')).map(r=>({itemId:r.dataset.item,desc:r.querySelector('.desc').textContent,qty:Number(r.querySelector('.qty').textContent),rate:Number(r.querySelector('.rate').textContent),amount:Number(r.querySelector('.amount').textContent)})); if(lines.length===0) return alert('Add at least one line');
+        const subtotal = lines.reduce((s,l)=>s+l.amount,0); const gst = Math.round(subtotal * tax/100); const total = subtotal + gst;
+        const id = uid('V'); const voucher = {id,type,date,party,lines,tax,total}; db.vouchers.push(voucher); saveDB(); closeModal(); renderVouchers(); alert('Voucher saved: '+id);
+      });
+
+      // after open: wire add line
+      setTimeout(()=>{
+        const vItem = document.getElementById('vItem'); const vQty = document.getElementById('vQty'); const vRate = document.getElementById('vRate'); const addLineBtn = document.getElementById('addLine'); const linesTbody = document.getElementById('linesTbody'); const vTax = document.getElementById('vTax'); const vNet = document.getElementById('vNet');
+        function refreshNet(){ const rows = Array.from(linesTbody.querySelectorAll('tr')); const subtotal = rows.reduce((s,r)=>s+Number(r.querySelector('.amount').textContent||0),0); const gst = Math.round(subtotal * (Number(vTax.value)||0)/100); vNet.textContent = formatMoney(subtotal + gst); }
+        addLineBtn.addEventListener('click', ()=>{
+          const item = db.items.find(it=>it.id===vItem.value); const qty = Number(vQty.value)||1; const rate = Number(vRate.value)||item?.rate||0; const amount = qty * rate; const tr = document.createElement('tr'); tr.dataset.item = item.id; tr.innerHTML = `<td class='desc'>${item.name}</td><td class='qty'>${qty}</td><td class='rate'>${rate}</td><td class='amount'>${amount}</td><td><button class='btn ghost remove'>Remove</button></td>`; linesTbody.appendChild(tr); tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); refreshNet(); }); refreshNet(); });
+        vItem.addEventListener('change', ()=>{ const it = db.items.find(i=>i.id===vItem.value); vRate.value = it?.rate||0; }); vTax.addEventListener('input', refreshNet);
+      },100);
+    }
+
+    // --- Reports ---
+    function renderReports(){ viewContainer.innerHTML = `
+      <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:8px'><div style='font-weight:700'>Reports</div><div class='controls'><button id='trialBtn' class='btn'>Trial Balance</button><button id='daybookBtn' class='btn ghost'>Day Book</button><button id='ledgerBtn' class='btn ghost'>Ledger</button></div></div>
+      <div id='reportArea'></div>
+    `;
+
+      document.getElementById('trialBtn').addEventListener('click', ()=>renderTrialBalance());
+      document.getElementById('daybookBtn').addEventListener('click', ()=>renderDayBook());
+      document.getElementById('ledgerBtn').addEventListener('click', ()=>renderLedgerSelect());
+    }
+
+    function renderTrialBalance(){ const rows = db.ledgers.map(l=>({name:l.name,opening:l.opening||0,dr:0,cr:0})); // simple: show opening only
+      const html = `<div class='card'><table class='table'><thead><tr><th>Ledger</th><th>Opening</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.name}</td><td>${formatMoney(r.opening)}</td></tr>`).join('')}</tbody></table></div>`; document.getElementById('reportArea').innerHTML = html; }
+
+    function renderDayBook(){ const rows = db.vouchers.slice().sort((a,b)=>a.date.localeCompare(b.date)); const html = `<div class='card'><table class='table'><thead><tr><th>Date</th><th>ID</th><th>Type</th><th>Party</th><th>Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.date}</td><td>${r.id}</td><td>${r.type}</td><td>${r.party||''}</td><td>${formatMoney(r.total)}</td></tr>`).join('')}</tbody></table></div>`; document.getElementById('reportArea').innerHTML = html; }
+
+    function renderLedgerSelect(){ const html = `<div class='card'><label>Select Ledger</label><select id='selectLedger' style='width:280px;margin-top:6px'>${db.ledgers.map(l=>`<option value='${l.id}'>${l.name}</option>`)}</select><div id='ledgerView' style='margin-top:12px'></div></div>`; document.getElementById('reportArea').innerHTML = html; document.getElementById('selectLedger').addEventListener('change', ()=>renderLedgerView(document.getElementById('selectLedger').value)); renderLedgerView(document.getElementById('selectLedger').value); }
+
+    function renderLedgerView(id){ const ledger = db.ledgers.find(l=>l.id===id); // find vouchers affecting ledger (simple: by party)
+      const rows = db.vouchers.filter(v=> (v.party && v.party.toLowerCase().includes(ledger.name.toLowerCase())) ); const html = `<div style='font-weight:700'>${ledger.name}</div><table class='table'><thead><tr><th>Date</th><th>Voucher</th><th>Type</th><th>Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.date}</td><td>${r.id}</td><td>${r.type}</td><td>${formatMoney(r.total)}</td></tr>`).join('')}</tbody></table>`; document.getElementById('ledgerView').innerHTML = html; }
+
+    // --- Modal helpers ---
+    const modal = document.getElementById('modal'); const modalTitle = document.getElementById('modalTitle'); const modalBody = document.getElementById('modalBody'); const modalSubtitle = document.getElementById('modalSubtitle');
+    function openModal(title, html, onSave){ modalTitle.textContent = title; modalBody.innerHTML = html; modal.classList.add('open'); modal.setAttribute('aria-hidden','false'); // set handler
+      document.getElementById('saveVoucher').onclick = ()=>{ if(onSave) onSave(); };
+    }
+    function closeModal(){ modal.classList.remove('open'); modal.setAttribute('aria-hidden','true'); }
+    document.getElementById('closeModal').addEventListener('click', ()=>closeModal());
+
+    // exporting/importing
+    document.getElementById('exportBtn').addEventListener('click', ()=>{ const blob = new Blob([JSON.stringify(db,null,2)], {type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='tally-lite-data.json'; a.click(); URL.revokeObjectURL(url); });
+    document.getElementById('importBtn').addEventListener('click', ()=>{ const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange = e=>{ const f = e.target.files[0]; if(!f) return; const reader=new FileReader(); reader.onload = ()=>{ try{ db = JSON.parse(reader.result); saveDB(); alert('Imported'); location.reload(); } catch(err){ alert('Invalid file'); } }; reader.readAsText(f); }; inp.click(); });
+
+    // quick actions
+    document.getElementById('newSale').addEventListener('click', ()=>{ openVoucherEditor({type:'Sales'}) });
+    document.getElementById('newPurchase').addEventListener('click', ()=>{ openVoucherEditor({type:'Purchase'}) });
+    document.getElementById('openDaybook').addEventListener('click', ()=>{ navButtons.forEach(x=>x.classList.remove('active')); document.querySelector('.nav button[data-view=reports]').classList.add('active'); showView('reports'); setTimeout(()=>{ document.getElementById('daybookBtn').click(); },200); });
+
+    // settings
+    function renderSettings(){ viewContainer.innerHTML = `
+      <div style='font-weight:700;margin-bottom:8px'>Settings</div>
+      <div class='card'><div class='form-row'><div style='width:300px'><label>Company Name</label><input id='sComp' value='${db.settings.company||''}' /></div><div style='width:160px'><label>Currency</label><input id='sCur' value='${db.settings.currency||'INR'}' /></div><div style='width:120px'><label>GST?</label><select id='sGst'><option ${db.settings.gst?'selected':''}>Yes</option><option ${!db.settings.gst?'selected':''}>No</option></select></div></div><div style='margin-top:8px'><button id='saveSettings' class='btn'>Save</button></div></div>
+    `; document.getElementById('saveSettings').addEventListener('click', ()=>{ db.settings.company = document.getElementById('sComp').value; db.settings.currency = document.getElementById('sCur').value; db.settings.gst = document.getElementById('sGst').value==='Yes'; saveDB(); alert('Saved'); renderSettings(); }); }
+
+    // initial view
+    showView('dashboard');
+
+    // close modal on escape
+    document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+
+  </script>
+</body>
+</html>
